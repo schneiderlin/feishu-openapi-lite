@@ -2,7 +2,8 @@
   (:require [clojure.string :as str]
             [com.zihao.feishu-openapi-lite.auth :as auth]
             [com.zihao.feishu-openapi-lite.http :as http]
-            [com.zihao.feishu-openapi-lite.json :as json]))
+            [com.zihao.feishu-openapi-lite.json :as json])
+  (:import [java.net URLEncoder]))
 
 (defn text-content
   [text]
@@ -19,6 +20,10 @@
       (get m (keyword (str/replace (name k) "-" "_")))
       (get m (name k))
       (get m (str/replace (name k) "-" "_"))))
+
+(defn- path-segment
+  [value]
+  (str/replace (URLEncoder/encode (str value) "UTF-8") "+" "%20"))
 
 (defn- sent-message->map
   [message]
@@ -123,3 +128,35 @@
 (defn reply-text!
   [client opts]
   (reply-message! client (assoc opts :msg-type "text")))
+
+(defn message-resource-request
+  [{:keys [domain tenant-access-token]} {:keys [message-id file-key type]}]
+  (let [message-id (or (nonblank message-id)
+                       (throw (ex-info "message-id is required"
+                                       {:type :feishu-openapi-lite/missing-option
+                                        :option :message-id})))
+        file-key (or (nonblank file-key)
+                     (throw (ex-info "file-key is required"
+                                     {:type :feishu-openapi-lite/missing-option
+                                      :option :file-key})))
+        resource-type (or (nonblank type) "image")
+        token (or tenant-access-token
+                  (throw (ex-info "tenant-access-token is required"
+                                  {:type :feishu-openapi-lite/missing-option
+                                   :option :tenant-access-token})))]
+    (http/binary-request
+     {:method :get
+      :url (http/api-url domain
+                         (str "/open-apis/im/v1/messages/"
+                              (path-segment message-id)
+                              "/resources/"
+                              (path-segment file-key)))
+      :query-params {"type" resource-type}
+      :headers {"Authorization" (str "Bearer " token)}})))
+
+(defn download-message-resource!
+  [client opts]
+  (let [token (or (:tenant-access-token client)
+                  (auth/tenant-access-token! client))
+        request (message-resource-request (assoc client :tenant-access-token token) opts)]
+    (http/execute-binary! client request)))

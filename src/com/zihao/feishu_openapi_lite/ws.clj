@@ -43,8 +43,7 @@
 
 (defn pull-endpoint!
   [client]
-  (-> (endpoint-request client)
-      (http/execute-json! client)
+  (-> (http/execute-json! client (endpoint-request client))
       normalize-endpoint-response))
 
 (defn- parse-query

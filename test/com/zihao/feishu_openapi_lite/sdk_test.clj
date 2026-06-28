@@ -28,7 +28,22 @@
             {:code 0
              :tenant_access_token "t-1"
              :expire 7200}
-            1000)))))
+            1000))))
+  (testing "fetching tenant tokens sends the token request through the configured requester"
+    (let [requests (atom [])
+          result (sut/fetch-tenant-access-token!
+                  {:app-id "cli_123"
+                   :app-secret "secret"
+                   :request! (fn [request]
+                               (swap! requests conj request)
+                               {:status 200
+                                :body (json/write-str
+                                       {:code 0
+                                        :tenant_access_token "t-1"
+                                        :expire 7200})})})]
+      (is (= "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+             (:uri (first @requests))))
+      (is (= "t-1" (:tenant-access-token result))))))
 
 (deftest reply-text-request-shape
   (testing "chat-id text sends serialize Feishu's message.create payload"
@@ -87,6 +102,38 @@
                     :msg_type "text"
                     :chat_id "oc_1"
                     :message_app_link "https://example.invalid/message"}})))))
+
+(deftest message-resource-request-and-download-shape
+  (testing "message resource downloads use message id, file key, and resource type"
+    (let [request (sut/message-resource-request
+                   {:domain "https://open.feishu.cn"
+                    :tenant-access-token "tenant-token"}
+                   {:message-id "om_1"
+                    :file-key "img_v3_1"
+                    :type "image"})]
+      (is (= :get (:method request)))
+      (is (= "https://open.feishu.cn/open-apis/im/v1/messages/om_1/resources/img_v3_1"
+             (:uri request)))
+      (is (= {"type" "image"}
+             (:query-params request)))
+      (is (= :bytes (:as request)))
+      (is (= "Bearer tenant-token"
+             (get-in request [:headers "Authorization"])))))
+  (testing "download-message-resource! returns binary bytes and content type"
+    (let [seen-requests (atom [])
+          result (sut/download-message-resource!
+                  {:tenant-access-token "tenant-token"
+                   :request! (fn [request]
+                               (swap! seen-requests conj request)
+                               {:status 200
+                                :headers {"content-type" "image/jpeg"}
+                                :body (byte-array [1 2 3])})}
+                  {:message-id "om_1"
+                   :file-key "img_v3_1"
+                   :type "image"})]
+      (is (= 1 (count @seen-requests)))
+      (is (= "image/jpeg" (:content-type result)))
+      (is (= [1 2 3] (vec (:bytes result)))))))
 
 (deftest p2-message-event-normalization
   (testing "raw p2 message events become small stable message maps"
@@ -181,8 +228,24 @@
                             :reconnect-nonce-ms 5000}}
            (sut/normalize-endpoint-response
             {:code 0
-             :data {:URL "wss://example.invalid/ws?device_id=d1&service_id=9"
-                    :ClientConfig {:PingInterval 10
-                                   :ReconnectCount 3
-                                   :ReconnectInterval 4
-                                   :ReconnectNonce 5}}})))))
+	             :data {:URL "wss://example.invalid/ws?device_id=d1&service_id=9"
+	                    :ClientConfig {:PingInterval 10
+	                                   :ReconnectCount 3
+	                                   :ReconnectInterval 4
+	                                   :ReconnectNonce 5}}}))))
+  (testing "pull-endpoint! sends the endpoint request through the configured requester"
+    (let [requests (atom [])
+          result (sut/pull-endpoint!
+                  {:app-id "cli_123"
+                   :app-secret "secret"
+                   :request! (fn [request]
+                               (swap! requests conj request)
+                               {:status 200
+                                :body (json/write-str
+                                       {:code 0
+                                        :data {:URL "wss://example.invalid/ws?device_id=d1&service_id=9"
+                                               :ClientConfig {:PingInterval 10}}})})})]
+      (is (= "https://open.feishu.cn/callback/ws/endpoint"
+             (:uri (first @requests))))
+      (is (= "wss://example.invalid/ws?device_id=d1&service_id=9"
+             (:url result))))))

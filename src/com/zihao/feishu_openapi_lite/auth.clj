@@ -28,8 +28,7 @@
 
 (defn fetch-tenant-access-token!
   [client]
-  (-> (internal-tenant-access-token-request client)
-      (http/execute-json! client)
+  (-> (http/execute-json! client (internal-tenant-access-token-request client))
       (normalize-tenant-access-token-response)))
 
 (defn token-fresh?

@@ -21,6 +21,8 @@
 (def normalize-message-response im/normalize-message-response)
 (def reply-message! im/reply-message!)
 (def reply-text! im/reply-text!)
+(def message-resource-request im/message-resource-request)
+(def download-message-resource! im/download-message-resource!)
 
 (def parse-event-payload event-codec/parse-event-payload)
 (def normalize-p2-event event-codec/normalize-p2-event)
