@@ -14,6 +14,7 @@
 (def tenant-access-token! auth/tenant-access-token!)
 
 (def text-content im/text-content)
+(def file-content im/file-content)
 (def create-message-request im/create-message-request)
 (def create-message! im/create-message!)
 (def send-text! im/send-text!)
@@ -21,8 +22,12 @@
 (def normalize-message-response im/normalize-message-response)
 (def reply-message! im/reply-message!)
 (def reply-text! im/reply-text!)
+(def reply-file! im/reply-file!)
 (def message-resource-request im/message-resource-request)
 (def download-message-resource! im/download-message-resource!)
+(def upload-file-request im/upload-file-request)
+(def normalize-file-upload-response im/normalize-file-upload-response)
+(def upload-file! im/upload-file!)
 
 (def parse-event-payload event-codec/parse-event-payload)
 (def normalize-p2-event event-codec/normalize-p2-event)

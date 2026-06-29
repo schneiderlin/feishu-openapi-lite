@@ -103,6 +103,53 @@
                     :chat_id "oc_1"
                     :message_app_link "https://example.invalid/message"}})))))
 
+(deftest file-upload-and-reply-request-shape
+  (testing "file uploads use Feishu's multipart file endpoint"
+    (let [file (java.io.File. "/tmp/report.pdf")
+          request (sut/upload-file-request
+                   {:domain "https://open.feishu.cn"
+                    :tenant-access-token "tenant-token"}
+                   {:file file
+                    :file-name "report.pdf"
+                    :file-type "pdf"})
+          parts (:multipart request)]
+      (is (= :post (:method request)))
+      (is (= "https://open.feishu.cn/open-apis/im/v1/files"
+             (:uri request)))
+      (is (= "Bearer tenant-token"
+             (get-in request [:headers "Authorization"])))
+      (is (= :string (:as request)))
+      (is (= [{:name "file_type" :content "pdf"}
+              {:name "file_name" :content "report.pdf"}
+              {:name "file"
+               :content file
+               :file-name "report.pdf"}]
+             parts))))
+  (testing "file replies serialize file_key as Feishu message content"
+    (let [request (sut/reply-message-request
+                   {:domain "https://open.feishu.cn"
+                    :tenant-access-token "tenant-token"}
+                   {:message-id "om_1"
+                    :msg-type "file"
+                    :content (sut/file-content "file_v2_1")
+                    :reply-in-thread? true
+                    :uuid "uuid-file"})
+          body (json/read-str (:body request))]
+      (is (= {:msg_type "file"
+              :content "{\"file_key\":\"file_v2_1\"}"
+              :reply_in_thread true
+              :uuid "uuid-file"}
+             body))))
+  (testing "successful file upload responses expose the file key"
+    (is (= {:ok? true
+            :code 0
+            :message "success"
+            :data {:file-key "file_v2_1"}}
+           (sut/normalize-file-upload-response
+            {:code 0
+             :msg "success"
+             :data {:file_key "file_v2_1"}})))))
+
 (deftest message-resource-request-and-download-shape
   (testing "message resource downloads use message id, file key, and resource type"
     (let [request (sut/message-resource-request

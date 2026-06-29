@@ -45,6 +45,18 @@
            :timeout timeout-ms}
     (seq query-params) (assoc :query-params query-params)))
 
+(defn multipart-request
+  [{:keys [method url headers query-params multipart timeout-ms]
+    :or {timeout-ms 15000}}]
+  (cond-> {:method method
+           :uri url
+           :headers headers
+           :multipart multipart
+           :as :string
+           :throw false
+           :timeout timeout-ms}
+    (seq query-params) (assoc :query-params query-params)))
+
 (defn request!
   [client request]
   (let [f (or (:request! client) http/request)]

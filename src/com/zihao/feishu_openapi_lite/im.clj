@@ -1,5 +1,6 @@
 (ns com.zihao.feishu-openapi-lite.im
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [com.zihao.feishu-openapi-lite.auth :as auth]
             [com.zihao.feishu-openapi-lite.http :as http]
             [com.zihao.feishu-openapi-lite.json :as json])
@@ -8,6 +9,10 @@
 (defn text-content
   [text]
   (json/write-str {:text (str text)}))
+
+(defn file-content
+  [file-key]
+  (json/write-str {:file_key (str file-key)}))
 
 (defn- nonblank
   [x]
@@ -42,6 +47,14 @@
       (kget message :chat-id) (assoc :chat-id (kget message :chat-id))
       (kget message :upper-message-id) (assoc :upper-message-id (kget message :upper-message-id))
       (kget message :message-app-link) (assoc :message-app-link (kget message :message-app-link)))))
+
+(defn- file-upload->map
+  [file]
+  (when (map? file)
+    (cond-> {}
+      (kget file :file-key) (assoc :file-key (kget file :file-key))
+      (kget file :file-name) (assoc :file-name (kget file :file-name))
+      (kget file :file-type) (assoc :file-type (kget file :file-type)))))
 
 (defn create-message-request
   [{:keys [domain tenant-access-token]} {:keys [chat-id receive-id receive-id-type text msg-type content uuid]
@@ -129,6 +142,19 @@
   [client opts]
   (reply-message! client (assoc opts :msg-type "text")))
 
+(defn reply-file!
+  [client {:keys [file-key content] :as opts}]
+  (let [content (or content
+                    (file-content
+                     (or (nonblank file-key)
+                         (throw (ex-info "file-key is required"
+                                         {:type :feishu-openapi-lite/missing-option
+                                          :option :file-key})))))]
+    (reply-message! client
+                    (assoc opts
+                           :msg-type "file"
+                           :content content))))
+
 (defn message-resource-request
   [{:keys [domain tenant-access-token]} {:keys [message-id file-key type]}]
   (let [message-id (or (nonblank message-id)
@@ -160,3 +186,53 @@
                   (auth/tenant-access-token! client))
         request (message-resource-request (assoc client :tenant-access-token token) opts)]
     (http/execute-binary! client request)))
+
+(defn upload-file-request
+  [{:keys [domain tenant-access-token]} {:keys [file file-path file-name file-type content-type]}]
+  (let [file (or file
+                 (when-let [path (nonblank file-path)]
+                   (io/file path))
+                 (throw (ex-info "file or file-path is required"
+                                 {:type :feishu-openapi-lite/missing-option
+                                  :required-any-of [:file :file-path]})))
+        file-name (or (nonblank file-name)
+                      (.getName (io/file file)))
+        file-type (or (nonblank file-type) "stream")
+        token (or tenant-access-token
+                  (throw (ex-info "tenant-access-token is required"
+                                  {:type :feishu-openapi-lite/missing-option
+                                   :option :tenant-access-token})))]
+    (http/multipart-request
+     {:method :post
+      :url (http/api-url domain "/open-apis/im/v1/files")
+      :headers {"Authorization" (str "Bearer " token)}
+      :multipart [{:name "file_type"
+                   :content file-type}
+                  {:name "file_name"
+                   :content file-name}
+                  (cond-> {:name "file"
+                           :content file
+                           :file-name file-name}
+                    (nonblank content-type)
+                    (assoc :content-type content-type))]})))
+
+(defn normalize-file-upload-response
+  [body]
+  (let [code (:code body)]
+    (if (zero? (long (or code 0)))
+      {:ok? true
+       :code code
+       :message (:msg body)
+       :data (file-upload->map (:data body))}
+      (throw (ex-info "Feishu file upload API request failed"
+                      {:type :feishu-openapi-lite/api-error
+                       :code code
+                       :message (:msg body)})))))
+
+(defn upload-file!
+  [client opts]
+  (let [token (or (:tenant-access-token client)
+                  (auth/tenant-access-token! client))
+        request (upload-file-request (assoc client :tenant-access-token token) opts)]
+    (-> (http/execute-json! client request)
+        normalize-file-upload-response)))
